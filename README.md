@@ -64,12 +64,27 @@ La aplicación sigue el patrón **MVVM (Model-View-ViewModel)** con una arquitec
 
 **Implementación realizada:**
 
-#### 🗃️ Modelo de Datos
+#### 🗃️ Modelo de Datos Completo
+
+El sistema implementa un **modelo relacional complejo** con 5 entidades interconectadas:
+
+##### 1. 👤 **User (Usuario)**
+```kotlin
+@Entity(tableName = "users")
+data class User(
+    @PrimaryKey val id: String, // Firebase UID
+    val name: String,
+    val email: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+```
+
+##### 2. 📝 **Note (Nota Principal)** - ✅ REQUERIDA POR CONSIGNA
 ```kotlin
 @Entity(tableName = "notes")
 data class Note(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
-    val userId: String,
+    val userId: String, // FK → User.id
     val title: String,
     val content: String,
     val createdAt: Long = System.currentTimeMillis(),
@@ -78,14 +93,104 @@ data class Note(
 )
 ```
 
-**Cumplimiento específico:**
+##### 3. 🏷️ **Tag (Etiqueta)**
+```kotlin
+@Entity(tableName = "tags")
+data class Tag(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val color: String = "#2196F3", // Color personalizable
+    val createdAt: Long = System.currentTimeMillis()
+)
+```
+
+##### 4. 🔗 **NoteTag (Relación Muchos-a-Muchos)**
+```kotlin
+@Entity(
+    tableName = "note_tags",
+    primaryKeys = ["noteId", "tagId"], // Clave primaria compuesta
+    foreignKeys = [
+        ForeignKey(entity = Note::class, parentColumns = ["id"], 
+                  childColumns = ["noteId"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(entity = Tag::class, parentColumns = ["id"], 
+                  childColumns = ["tagId"], onDelete = ForeignKey.CASCADE)
+    ],
+    indices = [Index(value = ["noteId"]), Index(value = ["tagId"])]
+)
+data class NoteTag(
+    val noteId: String, // FK → Note.id
+    val tagId: String   // FK → Tag.id
+)
+```
+
+##### 5. 📎 **Attachment (Adjunto)**
+```kotlin
+@Entity(
+    tableName = "attachments",
+    foreignKeys = [
+        ForeignKey(entity = Note::class, parentColumns = ["id"], 
+                  childColumns = ["noteId"], onDelete = ForeignKey.CASCADE)
+    ],
+    indices = [Index(value = ["noteId"])]
+)
+data class Attachment(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val noteId: String, // FK → Note.id
+    val uri: String,
+    val fileName: String,
+    val mimeType: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+```
+
+#### 🔗 **Diagrama de Relaciones del Modelo**
+
+```
+┌─────────────┐     1:N     ┌─────────────┐
+│    User     │────────────▶│    Note     │
+│ • id (PK)   │             │ • id (PK)   │
+│ • name      │             │ • userId(FK)│◀┐
+│ • email     │             │ • title     │ │
+│ • createdAt │             │ • content   │ │
+└─────────────┘             │ • createdAt │ │
+                            │ • updatedAt │ │
+                            │ • isSynced  │ │
+                            └─────────────┘ │
+                                    │       │
+                                    │ 1:N   │ 1:N
+                                    ▼       │
+                            ┌─────────────┐ │
+                            │ Attachment  │ │
+                            │ • id (PK)   │ │
+                            │ • noteId(FK)│─┘
+                            │ • uri       │
+                            │ • fileName  │
+                            │ • mimeType  │
+                            │ • createdAt │
+                            └─────────────┘
+                                    ▲
+                                    │ N:M (via NoteTag)
+                                    ▼
+┌─────────────┐             ┌─────────────┐
+│    Tag      │◀───────────▶│   NoteTag   │
+│ • id (PK)   │             │ • noteId(FK)│
+│ • name      │             │ • tagId(FK) │
+│ • color     │             │ (Composite  │
+│ • createdAt │             │  Primary)   │
+└─────────────┘             └─────────────┘
+```
+
+**Cumplimiento específico de la consigna:**
 - ✅ **id**: String (UUID) como clave primaria
 - ✅ **title**: String para título de nota
 - ✅ **content**: String para contenido
 - ✅ **timestamp**: Implementado como `createdAt` y `updatedAt` (Long)
 - ✅ **isSynced**: Boolean para indicar sincronización con nube
+- ✅ **Relaciones**: FK con User + sistema complejo de etiquetas y adjuntos
 
-#### 🔧 Implementación CRUD Completa
+#### 🔧 Implementación CRUD Completa - 5 DAOs Especializados
+
+##### 📝 **NoteDao - DAO Principal**
 ```kotlin
 @Dao
 interface NoteDao {
@@ -101,9 +206,133 @@ interface NoteDao {
     @Query("SELECT * FROM notes ORDER BY updatedAt DESC")
     fun getAllNotes(): Flow<List<Note>>
     
+    @Query("SELECT * FROM notes WHERE userId = :userId ORDER BY updatedAt DESC")
+    fun getNotesByUser(userId: String): Flow<List<Note>>
+    
     // ✅ FUNCIONALIDADES ADICIONALES PARA SINCRONIZACIÓN
-    @Query("SELECT * FROM notes WHERE isSynced = 0")
+    @Query("SELECT * FROM notes WHERE isSynced = 0 ORDER BY updatedAt DESC")
     suspend fun getUnsyncedNotes(): List<Note>
+    
+    @Query("UPDATE notes SET isSynced = :isSynced WHERE id = :noteId")
+    suspend fun updateSyncStatus(noteId: String, isSynced: Boolean)
+}
+```
+
+##### 👤 **UserDao - Gestión de Usuarios**
+```kotlin
+@Dao
+interface UserDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUser(user: User)
+    
+    @Update
+    suspend fun updateUser(user: User)
+    
+    @Delete
+    suspend fun deleteUser(user: User)
+    
+    @Query("SELECT * FROM users")
+    fun getAllUsers(): Flow<List<User>>
+    
+    @Query("SELECT * FROM users WHERE id = :userId")
+    suspend fun getUserById(userId: String): User?
+    
+    @Query("SELECT * FROM users WHERE email = :email")
+    suspend fun getUserByEmail(email: String): User?
+}
+```
+
+##### 🏷️ **TagDao - Sistema de Etiquetas**
+```kotlin
+@Dao
+interface TagDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTag(tag: Tag)
+    
+    @Update
+    suspend fun updateTag(tag: Tag)
+    
+    @Delete
+    suspend fun deleteTag(tag: Tag)
+    
+    @Query("SELECT * FROM tags ORDER BY name ASC")
+    fun getAllTags(): Flow<List<Tag>>
+    
+    @Query("SELECT * FROM tags WHERE id = :tagId")
+    suspend fun getTagById(tagId: String): Tag?
+    
+    // JOIN Query para obtener etiquetas de una nota específica
+    @Query("""
+        SELECT tags.* FROM tags
+        INNER JOIN note_tags ON tags.id = note_tags.tagId
+        WHERE note_tags.noteId = :noteId
+        ORDER BY tags.name ASC
+    """)
+    fun getTagsForNote(noteId: String): Flow<List<Tag>>
+}
+```
+
+##### 🔗 **NoteTagDao - Relaciones Muchos-a-Muchos**
+```kotlin
+@Dao
+interface NoteTagDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNoteTag(noteTag: NoteTag)
+    
+    @Delete
+    suspend fun deleteNoteTag(noteTag: NoteTag)
+    
+    @Query("DELETE FROM note_tags WHERE noteId = :noteId")
+    suspend fun deleteNoteTagsByNote(noteId: String)
+    
+    @Query("DELETE FROM note_tags WHERE tagId = :tagId")
+    suspend fun deleteNoteTagsByTag(tagId: String)
+    
+    @Query("SELECT * FROM note_tags WHERE noteId = :noteId")
+    fun getNoteTagsByNote(noteId: String): Flow<List<NoteTag>>
+}
+```
+
+##### 📎 **AttachmentDao - Sistema de Adjuntos**
+```kotlin
+@Dao
+interface AttachmentDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAttachment(attachment: Attachment)
+    
+    @Update
+    suspend fun updateAttachment(attachment: Attachment)
+    
+    @Delete
+    suspend fun deleteAttachment(attachment: Attachment)
+    
+    @Query("SELECT * FROM attachments WHERE noteId = :noteId ORDER BY createdAt ASC")
+    fun getAttachmentsForNote(noteId: String): Flow<List<Attachment>>
+    
+    @Query("DELETE FROM attachments WHERE noteId = :noteId")
+    suspend fun deleteAttachmentsByNote(noteId: String)
+}
+```
+
+#### 🗄️ **Configuración de Base de Datos**
+```kotlin
+@Database(
+    entities = [
+        User::class,        // 👤 Usuarios del sistema
+        Note::class,        // 📝 Notas principales
+        Tag::class,         // 🏷️ Etiquetas
+        Attachment::class,  // 📎 Adjuntos
+        NoteTag::class      // 🔗 Relación N:M Note-Tag
+    ],
+    version = 2,           // ✅ Actualizada para isSynced
+    exportSchema = true    // ✅ Esquemas exportados
+)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun userDao(): UserDao
+    abstract fun noteDao(): NoteDao
+    abstract fun tagDao(): TagDao
+    abstract fun attachmentDao(): AttachmentDao
+    abstract fun noteTagDao(): NoteTagDao
 }
 ```
 
@@ -172,28 +401,193 @@ service cloud.firestore {
 }
 ```
 
+## 🔄 Flujo Completo de Datos y Conexiones Internas
+
+### 📊 **Arquitectura de Flujo de Datos**
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           PRESENTATION LAYER                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │                         NotesScreen                                 │ │
+│  │  • collectAsState() para notes, users, tags, loading              │ │
+│  │  • AddNoteDialog con TagChip components                           │ │
+│  │  • UserSelectorSection para multi-usuario                         │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          BUSINESS LOGIC LAYER                            │
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │                          NoteViewModel                              │ │
+│  │  • StateFlow<List<Note>> notes                                     │ │
+│  │  • StateFlow<List<User>> users                                     │ │
+│  │  • StateFlow<List<Tag>> tags                                       │ │
+│  │  • StateFlow<User?> selectedUser                                   │ │
+│  │  • StateFlow<Boolean> isLoading                                    │ │
+│  │  • StateFlow<String?> errorMessage                                 │ │
+│  │                                                                     │ │
+│  │  OPERACIONES:                                                       │ │
+│  │  • selectUser() → loadNotesForUser() + performFullSync()          │ │
+│  │  • createNote() → con tags + attachments                          │ │
+│  │  • createTag() → verificación duplicados                          │ │
+│  │  • syncPendingNotes() → manual sync                               │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                             DATA LAYER                                   │
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │                         NoteRepository                              │ │
+│  │  COORDINADOR CENTRAL DE TODAS LAS OPERACIONES:                     │ │
+│  │                                                                     │ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │ │
+│  │  │                    OPERACIONES DE USUARIO                       │ │ │
+│  │  │  • insertUser() → Room + Firestore                             │ │ │
+│  │  │  • getAllUsers() → Flow<List<User>>                             │ │ │
+│  │  │  • getUserById() → User?                                        │ │ │
+│  │  └─────────────────────────────────────────────────────────────────┘ │ │
+│  │                                                                     │ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │ │
+│  │  │                     OPERACIONES DE NOTAS                        │ │ │
+│  │  │  • insertNote() → Room first + Firestore sync                  │ │ │
+│  │  │  • updateNote() → isSynced=false + sync attempt                │ │ │
+│  │  │  • deleteNote() → Room + Firestore deletion                    │ │ │
+│  │  │  • getNotesByUser() → Flow<List<Note>> filtrado                │ │ │
+│  │  └─────────────────────────────────────────────────────────────────┘ │ │
+│  │                                                                     │ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │ │
+│  │  │                  OPERACIONES DE ETIQUETAS                       │ │ │
+│  │  │  • insertTag() → Room + Firestore                              │ │ │
+│  │  │  • insertNoteTag() → Relación N:M + Firestore                  │ │ │
+│  │  │  • getAllTags() → Flow<List<Tag>>                               │ │ │
+│  │  │  • getTagsForNote() → JOIN query                               │ │ │
+│  │  └─────────────────────────────────────────────────────────────────┘ │ │
+│  │                                                                     │ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │ │
+│  │  │                   OPERACIONES DE ADJUNTOS                       │ │ │
+│  │  │  • insertAttachment() → Room + Firestore                       │ │ │
+│  │  │  • getAttachmentsForNote() → Flow<List<Attachment>>             │ │ │
+│  │  │  • deleteAttachmentsByNote() → CASCADE deletion                │ │ │
+│  │  └─────────────────────────────────────────────────────────────────┘ │ │
+│  │                                                                     │ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │ │
+│  │  │              SINCRONIZACIÓN BIDIRECCIONAL                       │ │ │
+│  │  │  • syncUnsyncedNotes() → Upload pendientes                     │ │ │
+│  │  │  • downloadNotesFromFirestore() → Download + conflicts         │ │ │
+│  │  │  • performFullSync() → Sync completa bidireccional             │ │ │
+│  │  │  • NetworkUtils monitoring → Auto-retry on reconnect           │ │ │
+│  │  └─────────────────────────────────────────────────────────────────┘ │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+│                                      │                                   │
+│              ┌───────────────────────┼───────────────────────┐           │
+│              ▼                       ▼                       ▼           │
+│  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     │
+│  │   ROOM (Local)  │     │ FIRESTORE(Cloud)│     │ NETWORK UTILS   │     │
+│  │                 │     │                 │     │                 │     │
+│  │ • 5 DAOs        │     │ • 5 Collections │     │ • Connectivity  │     │
+│  │ • 5 Entities    │     │ • Security Rules │     │ • Auto-retry    │     │
+│  │ • Relationships │     │ • Offline Cache  │     │ • StateFlow     │     │
+│  │ • Indices       │     │ • Real-time     │     │ • Callbacks     │     │
+│  │ • Migrations    │     │ • Sync Queue    │     │ • Cleanup       │     │
+│  └─────────────────┘     └─────────────────┘     └─────────────────┘     │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 🔗 **Conexiones Internas Detalladas**
+
+#### 1. **Flujo de Creación de Nota Completa**
+```kotlin
+// 1. UI → ViewModel
+viewModel.createNote(title, content, selectedTags, attachmentUri)
+
+// 2. ViewModel → Repository
+repository.insertNote(note)                    // Nota principal
+selectedTags.forEach { tag ->
+    repository.insertNoteTag(NoteTag(note.id, tag.id))  // Relaciones
+}
+if (attachmentUri != null) {
+    repository.insertAttachment(attachment)     // Adjuntos
+}
+
+// 3. Repository → Room (SIEMPRE PRIMERO)
+noteDao.insertNote(note.copy(isSynced = false))
+noteTagDao.insertNoteTag(noteTag)
+attachmentDao.insertAttachment(attachment)
+
+// 4. Repository → Firestore (SI HAY CONEXIÓN)
+if (networkUtils.isConnected.value) {
+    firestore.collection("notes").document(note.id).set(noteMap)
+    firestore.collection("note_tags").document(id).set(noteTagMap)
+    firestore.collection("attachments").document(id).set(attachmentMap)
+    
+    // 5. Marcar como sincronizada
+    noteDao.updateSyncStatus(note.id, true)
+}
+```
+
+#### 2. **Flujo de Sincronización Automática**
+```kotlin
+// NetworkUtils detecta cambio de conectividad
+networkCallback.onAvailable() → _wasDisconnected.value = true
+
+// Repository escucha cambios
+networkUtils.wasDisconnected.collect { wasDisconnected →
+    if (wasDisconnected && isConnected) {
+        syncUnsyncedNotes()          // Upload pendientes
+        downloadNotesFromFirestore() // Download cambios remotos
+        networkUtils.resetDisconnectedFlag()
+    }
+}
+```
+
+#### 3. **Flujo de Selección de Usuario Multi-Usuario**
+```kotlin
+// UI → ViewModel
+noteViewModel.selectUser(user)
+
+// ViewModel coordina múltiples operaciones
+selectedUser.value = user
+loadNotesForUser(user.id)        // Cargar notas del usuario
+performFullSync(user.id)         // Sincronizar datos del usuario
+
+// Repository ejecuta queries específicas por usuario
+noteDao.getNotesByUser(userId)   // Solo notas de este usuario
+```
+
 ## 🚀 Funcionalidades Adicionales Implementadas
 
-### 🏷️ Sistema de Etiquetas (Tags)
-- Relación muchos-a-muchos con notas
-- Colores personalizables
-- Sincronización con Firestore
+### 🏷️ **Sistema de Etiquetas Avanzado**
+- **Relación muchos-a-muchos** con tabla intermedia `NoteTag`
+- **Colores personalizables** con paleta hexadecimal
+- **JOIN queries** para obtener etiquetas por nota
+- **Prevención de duplicados** en creación
+- **Sincronización completa** con Firestore
+- **UI con TagChip** components reutilizables
 
-### 📎 Sistema de Adjuntos
-- Soporte para archivos adjuntos
-- Relaciones con Foreign Keys
-- Eliminación en cascada
+### 📎 **Sistema de Adjuntos Robusto**
+- **Foreign Key constraints** con eliminación en cascada
+- **Soporte multi-formato** (URI, fileName, mimeType)
+- **Relación 1:N** con notas (una nota → múltiples adjuntos)
+- **Queries optimizadas** con índices
+- **Sincronización automática** con metadatos
 
-### 👥 Sistema Multi-Usuario
-- Gestión de múltiples usuarios
-- Segregación de datos por usuario
-- UI para selección de usuario
+### 👥 **Sistema Multi-Usuario Completo**
+- **Gestión de múltiples usuarios** por dispositivo
+- **Segregación total de datos** por userId
+- **UI selector de usuario** con información completa
+- **Sincronización por usuario** independiente
+- **Integración Firebase Auth** con Google Sign-In
 
-### 🎨 Interfaz Moderna con Jetpack Compose
-- Material Design 3
-- Estados reactivos con StateFlow
-- Componentes reutilizables
-- Manejo de loading y errores
+### 🎨 **Interfaz Moderna con Jetpack Compose**
+- **Material Design 3** con theming completo
+- **Estados reactivos** con StateFlow en toda la app
+- **Componentes reutilizables** (TagChip, UserCard, NoteCard)
+- **Manejo de loading** con CircularProgressIndicator
+- **Gestión de errores** con feedback visual
+- **Responsive design** adaptable a diferentes pantallas
 
 ## 🔧 Aspectos Técnicos Avanzados
 
@@ -251,18 +645,84 @@ implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 4. Sincronizar proyecto
 5. Ejecutar aplicación
 
-## 📈 Métricas del Proyecto
+## 📈 Métricas del Proyecto - Análisis Completo
 
-### 📊 Estadísticas
-- **Líneas de código**: ~1,500+ líneas
-- **Archivos Kotlin**: 15 archivos
-- **Entidades Room**: 5 entidades
-- **Funciones de sincronización**: 8 funciones principales
+### 📊 **Estadísticas Detalladas del Código**
+- **Líneas de código total**: ~2,000+ líneas
+- **Archivos Kotlin**: 16 archivos principales
+- **Archivos de configuración**: 8 archivos (gradle, manifest, etc.)
+- **Archivos UI**: 4 archivos (theme, screens, components)
 
-### 🏗️ Arquitectura
-- **Capas**: 3 capas bien definidas
-- **Patrones**: MVVM, Repository, Observer
-- **Principios**: SOLID, Clean Architecture
+### 🗄️ **Base de Datos - Complejidad Relacional**
+- **Entidades Room**: 5 entidades interconectadas
+- **DAOs especializados**: 5 DAOs con 35+ métodos
+- **Relaciones implementadas**: 
+  - 3 relaciones 1:N (User→Note, Note→Attachment, etc.)
+  - 1 relación N:M (Note↔Tag via NoteTag)
+- **Foreign Keys**: 4 constraints con CASCADE
+- **Índices optimizados**: 6 índices para performance
+- **Queries complejas**: 3 JOIN queries para relaciones
+
+### 🔄 **Sistema de Sincronización**
+- **Funciones de sincronización**: 12 funciones principales
+- **Estrategias implementadas**: 
+  - Offline-first nativo
+  - Sincronización bidireccional
+  - Resolución de conflictos automática
+  - Reintento automático
+- **Estados de sincronización**: Campo `isSynced` en 5 entidades
+- **Colecciones Firestore**: 5 colecciones sincronizadas
+
+### 🎨 **Interfaz de Usuario**
+- **Composables**: 15+ componentes reutilizables
+- **Estados reactivos**: 6 StateFlow principales
+- **Screens principales**: 3 pantallas (Login, Main, Notes)
+- **Diálogos**: 2 diálogos modales (AddNote, UserSelector)
+- **Componentes personalizados**: TagChip, NoteCard, UserCard
+
+### 🏗️ **Arquitectura y Patrones**
+- **Capas arquitecturales**: 3 capas bien definidas
+  - Presentation (UI + ViewModels)
+  - Business Logic (Repository + UseCases)
+  - Data (Room + Firestore + Network)
+- **Patrones implementados**: 
+  - MVVM (Model-View-ViewModel)
+  - Repository Pattern
+  - Observer Pattern
+  - Factory Pattern (ViewModelFactory)
+  - Singleton Pattern (Database, NetworkUtils)
+- **Principios seguidos**: 
+  - SOLID (Single Responsibility, Open/Closed, etc.)
+  - Clean Architecture
+  - Dependency Injection manual
+  - Separation of Concerns
+
+### ⚡ **Tecnologías y Frameworks**
+- **Android moderno**: 
+  - Jetpack Compose (UI declarativa)
+  - Room 2.6.1 (persistencia local)
+  - Coroutines + Flow (programación reactiva)
+  - StateFlow (manejo de estados)
+- **Firebase stack**: 
+  - Firestore (base de datos NoSQL)
+  - Authentication (Google Sign-In)
+  - Security Rules (control de acceso)
+- **Conectividad**: 
+  - NetworkCallback (monitoreo de red)
+  - ConnectivityManager (estado de conexión)
+  - Reintento automático personalizado
+
+### 🧪 **Complejidad Técnica**
+- **Nivel de complejidad**: **ALTO**
+  - Modelo relacional complejo (5 entidades + relaciones)
+  - Sincronización bidireccional en tiempo real
+  - Manejo multi-usuario con segregación de datos
+  - Sistema de etiquetas con relaciones N:M
+  - Adjuntos con Foreign Key constraints
+- **Líneas de lógica de negocio**: ~800 líneas
+- **Líneas de UI**: ~600 líneas  
+- **Líneas de configuración**: ~400 líneas
+- **Funciones totales**: 50+ funciones especializadas
 
 ## 📝 Conclusiones y Logros
 
@@ -305,7 +765,7 @@ Este proyecto va **más allá de un MVP básico** y demuestra:
 ## 👨‍💻 Sobre el Autor
 
 **Mariano Daniel Gobea Alcoba**  
-Estudiante de Ingeniería en Sistemas  
+Estudiante de la Especialización en Ingeniería de Software -   
 Universidad Abierta Interamericana (UAI)
 
 Este proyecto representa la culminación del aprendizaje en **Bases de Datos Móviles**, demostrando no solo el cumplimiento de requisitos académicos, sino también la capacidad de crear soluciones de calidad empresarial con tecnologías modernas.

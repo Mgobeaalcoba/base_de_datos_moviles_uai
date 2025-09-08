@@ -1,0 +1,108 @@
+# Archivos y carpetas generados por Android Studio
+.idea/
+*.iml
+.gradle/
+local.properties
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Archivos de sistema macOS
+.DS_Store
+
+# Archivos de salida de Gradle
+out/
+
+# Archivos de logs y reportes
+*.log
+*.tmp
+*.bak
+
+# Archivos de configuración de Android
+*.apk
+*.ap_*
+*.dex
+*.class
+*.jar
+*.aar
+*.hprof
+
+# Archivos de test y cobertura
+/test/
+/test-results/
+/reports/
+
+# Archivos de Room schema
+schemas/
+
+# Archivos de cache de Kotlin
+.kotlinc/
+
+# Archivos de cache de lint
+lint-cache/
+
+# Archivos de cache de Android
+.cache/
+
+# Archivos de configuración de gradle wrapper
+/gradle/wrapper/gradle-wrapper.properties
+/gradle/wrapper/gradle-wrapper.jar
+
+# Archivos de configuración de Firebase
+/google-services.json
+
+# Archivos de configuración de ProGuard
+proguard-rules.pro
+
+# Archivos de configuración de versiones
+libs.versions.toml
+
+# Archivos de configuración de backup y extracción
+app/src/main/res/xml/backup_rules.xml
+app/src/main/res/xml/data_extraction_rules.xml
+
+# Archivos de configuración de Room
+app/schemas/
+
+# Archivos de configuración de AndroidManifest
+app/src/main/AndroidManifest.xml
+
+# Archivos de configuración de gradle
+settings.gradle.kts
+build.gradle.kts
+app/build.gradle.kts
+
+# Archivos de configuración de propiedades
+gradle.properties
+
+# Archivos de salida de compilación
+app/build/
+
+# Archivos de salida de test
+app/test-results/
+app/reports/
+
+# Archivos de salida de cache
+app/.cxx/
+app/.externalNativeBuild/
+
+# Archivos de salida de Kotlin
+app/.kotlinc/
+
+# Archivos de salida de lint
+app/lint-cache/
+
+# Archivos de salida de Android
+app/.cache/
+
+# Archivos de salida de logs
+app/*.log
+app/*.tmp
+app/*.bak
+
+# Archivos de salida de test
+app/test/
+
+# Archivos de salida de Room schema
+app/schemas/

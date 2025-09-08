@@ -437,63 +437,63 @@ service cloud.firestore {
 └─────────────────────────────────────────────────────────────────────────┘
                                       │
                                       ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│                             DATA LAYER                                     │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                         NoteRepository                               │  │
-│  │  COORDINADOR CENTRAL DE TODAS LAS OPERACIONES:                       │  │
-│  │                                                                      │  │
-│  │  ┌─────────────────────────────────────────────────────────────────┐ │  │
-│  │  │                    OPERACIONES DE USUARIO                       │ │  │
-│  │  │  • insertUser() → Room + Firestore                              │ │  │
-│  │  │  • getAllUsers() → Flow<List<User>>                             │ │  │
-│  │  │  • getUserById() → User?                                        │ │  │
-│  │  └─────────────────────────────────────────────────────────────────┘ │  │
-│  │                                                                      │  │
-│  │  ┌─────────────────────────────────────────────────────────────────┐ │  │
-│  │  │                     OPERACIONES DE NOTAS                        │ │  │
-│  │  │  • insertNote() → Room first + Firestore sync                   │ │  │
-│  │  │  • updateNote() → isSynced=false + sync attempt                 │ │  │
-│  │  │  • deleteNote() → Room + Firestore deletion                     │ │  │
-│  │  │  • getNotesByUser() → Flow<List<Note>> filtrado                 │ │  │
-│  │  └─────────────────────────────────────────────────────────────────┘ │  │
-│  │                                                                      │  │
-│  │  ┌─────────────────────────────────────────────────────────────────┐ │  │
-│  │  │                  OPERACIONES DE ETIQUETAS                       │ │  │
-│  │  │  • insertTag() → Room + Firestore                               │ │  │
-│  │  │  • insertNoteTag() → Relación N:M + Firestore                   │ │  │
-│  │  │  • getAllTags() → Flow<List<Tag>>                               │ │  │
-│  │  │  • getTagsForNote() → JOIN query                                │ │  │
-│  │  └─────────────────────────────────────────────────────────────────┘ │  │
-│  │                                                                      │  │
-│  │  ┌─────────────────────────────────────────────────────────────────┐ │  │
-│  │  │                   OPERACIONES DE ADJUNTOS                       │ │  │
-│  │  │  • insertAttachment() → Room + Firestore                        │ │  │
-│  │  │  • getAttachmentsForNote() → Flow<List<Attachment>>             │ │  │
-│  │  │  • deleteAttachmentsByNote() → CASCADE deletion                 │ │  │
-│  │  └─────────────────────────────────────────────────────────────────┘ │  │
-│  │                                                                      │  │
-│  │  ┌─────────────────────────────────────────────────────────────────┐ │  │
-│  │  │              SINCRONIZACIÓN BIDIRECCIONAL                       │ │  │
-│  │  │  • syncUnsyncedNotes() → Upload pendientes                      │ │  │
-│  │  │  • downloadNotesFromFirestore() → Download + conflicts          │ │  │
-│  │  │  • performFullSync() → Sync completa bidireccional              │ │  │
-│  │  │  • NetworkUtils monitoring → Auto-retry on reconnect            │ │  │
-│  │  └─────────────────────────────────────────────────────────────────┘ │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                      │                                     │
-│              ┌───────────────────────┼───────────────────────┐             │
-│              ▼                       ▼                       ▼             │
-│  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐       │
-│  │   ROOM (Local)  │     │ FIRESTORE(Cloud)│     │ NETWORK UTILS   │       │
-│  │                 │     │                 │     │                 │       │
-│  │ • 5 DAOs        │     │ • 5 Collections │     │ • Connectivity  │       │
-│  │ • 5 Entities    │     │ • Security Rules │     │ • Auto-retry    │      │
-│  │ • Relationships │     │ • Offline Cache  │     │ • StateFlow     │      │
-│  │ • Indices       │     │ • Real-time     │     │ • Callbacks     │       │
-│  │ • Migrations    │     │ • Sync Queue    │     │ • Cleanup       │       │
-│  └─────────────────┘     └─────────────────┘     └─────────────────┘       │
-└────────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│                             DATA LAYER                                    │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │                         NoteRepository                               │ │
+│  │  COORDINADOR CENTRAL DE TODAS LAS OPERACIONES:                       │ │
+│  │                                                                      │ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │ │
+│  │  │                    OPERACIONES DE USUARIO                       │ │ │
+│  │  │  • insertUser() → Room + Firestore                              │ │ │
+│  │  │  • getAllUsers() → Flow<List<User>>                             │ │ │
+│  │  │  • getUserById() → User?                                        │ │ │
+│  │  └─────────────────────────────────────────────────────────────────┘ │ │
+│  │                                                                      │ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │ │
+│  │  │                     OPERACIONES DE NOTAS                        │ │ │
+│  │  │  • insertNote() → Room first + Firestore sync                   │ │ │
+│  │  │  • updateNote() → isSynced=false + sync attempt                 │ │ │
+│  │  │  • deleteNote() → Room + Firestore deletion                     │ │ │
+│  │  │  • getNotesByUser() → Flow<List<Note>> filtrado                 │ │ │
+│  │  └─────────────────────────────────────────────────────────────────┘ │ │
+│  │                                                                      │ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │ │
+│  │  │                  OPERACIONES DE ETIQUETAS                       │ │ │
+│  │  │  • insertTag() → Room + Firestore                               │ │ │
+│  │  │  • insertNoteTag() → Relación N:M + Firestore                   │ │ │
+│  │  │  • getAllTags() → Flow<List<Tag>>                               │ │ │
+│  │  │  • getTagsForNote() → JOIN query                                │ │ │
+│  │  └─────────────────────────────────────────────────────────────────┘ │ │
+│  │                                                                      │ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │ │
+│  │  │                   OPERACIONES DE ADJUNTOS                       │ │ │
+│  │  │  • insertAttachment() → Room + Firestore                        │ │ │
+│  │  │  • getAttachmentsForNote() → Flow<List<Attachment>>             │ │ │
+│  │  │  • deleteAttachmentsByNote() → CASCADE deletion                 │ │ │
+│  │  └─────────────────────────────────────────────────────────────────┘ │ │
+│  │                                                                      │ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │ │
+│  │  │              SINCRONIZACIÓN BIDIRECCIONAL                       │ │ │
+│  │  │  • syncUnsyncedNotes() → Upload pendientes                      │ │ │
+│  │  │  • downloadNotesFromFirestore() → Download + conflicts          │ │ │
+│  │  │  • performFullSync() → Sync completa bidireccional              │ │ │
+│  │  │  • NetworkUtils monitoring → Auto-retry on reconnect            │ │ │
+│  │  └─────────────────────────────────────────────────────────────────┘ │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│                                      │                                    │
+│              ┌───────────────────────┼───────────────────────┐            │
+│              ▼                       ▼                       ▼            │
+│  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐      │
+│  │   ROOM (Local)  │     │ FIRESTORE(Cloud)│     │ NETWORK UTILS   │      │
+│  │                 │     │                 │     │                 │      │
+│  │ • 5 DAOs        │     │ • 5 Collections │     │ • Connectivity  │      │
+│  │ • 5 Entities    │     │ • Security Rules│     │ • Auto-retry    │      │
+│  │ • Relationships │     │ • Offline Cache │     │ • StateFlow     │      │
+│  │ • Indices       │     │ • Real-time     │     │ • Callbacks     │      │
+│  │ • Migrations    │     │ • Sync Queue    │     │ • Cleanup       │      │
+│  └─────────────────┘     └─────────────────┘     └─────────────────┘      │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 🔗 **Conexiones Internas Detalladas**

@@ -126,7 +126,8 @@ class LoginActivity : ComponentActivity() {
                     db.userDao(),
                     db.tagDao(),
                     db.attachmentDao(),
-                    db.noteTagDao()
+                    db.noteTagDao(),
+                    applicationContext
                 )
 
                 Log.d("LoginActivity", "saveUserAndNavigate: Creando objeto User")

@@ -60,7 +60,8 @@ class MainActivity : ComponentActivity() {
             db.userDao(),
             db.tagDao(),
             db.attachmentDao(),
-            db.noteTagDao()
+            db.noteTagDao(),
+            applicationContext
         )
 
         // Obtener ViewModel con el repositorio

@@ -1,5 +1,6 @@
 package com.apptrack.solutions.data
 
+import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.tasks.await
@@ -8,17 +9,24 @@ import com.apptrack.solutions.model.Tag
 import com.apptrack.solutions.model.User
 import com.apptrack.solutions.model.Attachment
 import com.apptrack.solutions.model.NoteTag
+import com.apptrack.solutions.util.NetworkUtils
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 class NoteRepository(
     private val noteDao: NoteDao,
     private val userDao: UserDao,
     private val tagDao: TagDao,
     private val attachmentDao: AttachmentDao,
-    private val noteTagDao: NoteTagDao
+    private val noteTagDao: NoteTagDao,
+    private val context: Context
 ) {
 
     companion object {
@@ -30,6 +38,21 @@ class NoteRepository(
     }
 
     private val firestore: FirebaseFirestore = Firebase.firestore
+    private val networkUtils = NetworkUtils(context)
+    private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    init {
+        // Monitorear cambios de conectividad para sincronización automática
+        syncScope.launch {
+            networkUtils.wasDisconnected.collect { wasDisconnected ->
+                if (wasDisconnected && networkUtils.isConnected.value) {
+                    Log.d(TAG, "Connection restored - starting automatic sync")
+                    syncUnsyncedNotes()
+                    networkUtils.resetDisconnectedFlag()
+                }
+            }
+        }
+    }
 
     // User operations
     suspend fun insertUser(user: User) {
@@ -87,30 +110,38 @@ class NoteRepository(
 
         try {
             // Guardar en Room (local) PRIMERO - esto siempre debe funcionar
-            noteDao.insertNote(note)
+            val noteToInsert = note.copy(isSynced = false)
+            noteDao.insertNote(noteToInsert)
             Log.d(TAG, "insertNote: Nota guardada en Room exitosamente")
 
             // Intentar guardar en Firestore (nube) - si falla, no es crítico
-            try {
-                val noteMap = mapOf(
-                    "id" to note.id,
-                    "userId" to note.userId,
-                    "title" to note.title,
-                    "content" to note.content,
-                    "createdAt" to note.createdAt,
-                    "updatedAt" to note.updatedAt
-                )
+            if (networkUtils.isConnected.value) {
+                try {
+                    val noteMap = mapOf(
+                        "id" to noteToInsert.id,
+                        "userId" to noteToInsert.userId,
+                        "title" to noteToInsert.title,
+                        "content" to noteToInsert.content,
+                        "createdAt" to noteToInsert.createdAt,
+                        "updatedAt" to noteToInsert.updatedAt,
+                        "isSynced" to true
+                    )
 
-                firestore.collection(NOTES_COLLECTION)
-                    .document(note.id)
-                    .set(noteMap)
-                    .await()
+                    firestore.collection(NOTES_COLLECTION)
+                        .document(noteToInsert.id)
+                        .set(noteMap)
+                        .await()
 
-                Log.d(TAG, "insertNote: Nota guardada en Firestore exitosamente")
+                    // Marcar como sincronizada
+                    noteDao.updateSyncStatus(noteToInsert.id, true)
+                    Log.d(TAG, "insertNote: Nota guardada en Firestore y marcada como sincronizada")
 
-            } catch (firestoreException: Exception) {
-                Log.w(TAG, "insertNote: Error guardando en Firestore (continuando con Room solamente)", firestoreException)
-                // No lanzar excepción - la operación local fue exitosa
+                } catch (firestoreException: Exception) {
+                    Log.w(TAG, "insertNote: Error guardando en Firestore (se sincronizará más tarde)", firestoreException)
+                    // La nota queda marcada como no sincronizada para reintento posterior
+                }
+            } else {
+                Log.d(TAG, "insertNote: Sin conexión, nota se sincronizará cuando haya conexión")
             }
 
         } catch (e: Exception) {
@@ -123,32 +154,42 @@ class NoteRepository(
         Log.d(TAG, "updateNote: Actualizando nota: ${note.id}")
 
         try {
-            val updatedNote = note.copy(updatedAt = System.currentTimeMillis())
+            val updatedNote = note.copy(
+                updatedAt = System.currentTimeMillis(),
+                isSynced = false // Marcar como no sincronizada al actualizar
+            )
 
             // Actualizar en Room (local) PRIMERO
             noteDao.updateNote(updatedNote)
             Log.d(TAG, "updateNote: Nota actualizada en Room")
 
             // Intentar actualizar en Firestore
-            try {
-                val noteMap = mapOf(
-                    "id" to updatedNote.id,
-                    "userId" to updatedNote.userId,
-                    "title" to updatedNote.title,
-                    "content" to updatedNote.content,
-                    "createdAt" to updatedNote.createdAt,
-                    "updatedAt" to updatedNote.updatedAt
-                )
+            if (networkUtils.isConnected.value) {
+                try {
+                    val noteMap = mapOf(
+                        "id" to updatedNote.id,
+                        "userId" to updatedNote.userId,
+                        "title" to updatedNote.title,
+                        "content" to updatedNote.content,
+                        "createdAt" to updatedNote.createdAt,
+                        "updatedAt" to updatedNote.updatedAt,
+                        "isSynced" to true
+                    )
 
-                firestore.collection(NOTES_COLLECTION)
-                    .document(updatedNote.id)
-                    .set(noteMap)
-                    .await()
+                    firestore.collection(NOTES_COLLECTION)
+                        .document(updatedNote.id)
+                        .set(noteMap)
+                        .await()
 
-                Log.d(TAG, "updateNote: Nota actualizada en Firestore")
+                    // Marcar como sincronizada
+                    noteDao.updateSyncStatus(updatedNote.id, true)
+                    Log.d(TAG, "updateNote: Nota actualizada en Firestore y marcada como sincronizada")
 
-            } catch (firestoreException: Exception) {
-                Log.w(TAG, "updateNote: Error actualizando en Firestore (continuando con Room solamente)", firestoreException)
+                } catch (firestoreException: Exception) {
+                    Log.w(TAG, "updateNote: Error actualizando en Firestore (se sincronizará más tarde)", firestoreException)
+                }
+            } else {
+                Log.d(TAG, "updateNote: Sin conexión, nota se sincronizará cuando haya conexión")
             }
 
         } catch (e: Exception) {
@@ -337,4 +378,163 @@ class NoteRepository(
     suspend fun deleteAttachment(attachment: Attachment) = attachmentDao.deleteAttachment(attachment)
     fun getAttachmentsForNote(noteId: String): Flow<List<Attachment>> = attachmentDao.getAttachmentsForNote(noteId)
     suspend fun getAttachmentById(attachmentId: String): Attachment? = attachmentDao.getAttachmentById(attachmentId)
+
+    // ==================== FUNCIONES DE SINCRONIZACIÓN BIDIRECCIONAL ====================
+
+    /**
+     * Sincroniza todas las notas no sincronizadas con Firestore
+     */
+    suspend fun syncUnsyncedNotes() {
+        if (!networkUtils.isConnected.value) {
+            Log.d(TAG, "syncUnsyncedNotes: Sin conexión, cancelando sincronización")
+            return
+        }
+
+        try {
+            Log.d(TAG, "syncUnsyncedNotes: Iniciando sincronización de notas pendientes")
+            val unsyncedNotes = noteDao.getUnsyncedNotes()
+            Log.d(TAG, "syncUnsyncedNotes: Encontradas ${unsyncedNotes.size} notas por sincronizar")
+
+            for (note in unsyncedNotes) {
+                try {
+                    val noteMap = mapOf(
+                        "id" to note.id,
+                        "userId" to note.userId,
+                        "title" to note.title,
+                        "content" to note.content,
+                        "createdAt" to note.createdAt,
+                        "updatedAt" to note.updatedAt,
+                        "isSynced" to true
+                    )
+
+                    firestore.collection(NOTES_COLLECTION)
+                        .document(note.id)
+                        .set(noteMap)
+                        .await()
+
+                    // Marcar como sincronizada
+                    noteDao.updateSyncStatus(note.id, true)
+                    Log.d(TAG, "syncUnsyncedNotes: Nota ${note.id} sincronizada exitosamente")
+
+                } catch (e: Exception) {
+                    Log.e(TAG, "syncUnsyncedNotes: Error sincronizando nota ${note.id}", e)
+                    // Continuar con la siguiente nota
+                }
+            }
+
+            Log.d(TAG, "syncUnsyncedNotes: Sincronización completada")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "syncUnsyncedNotes: Error general en sincronización", e)
+        }
+    }
+
+    /**
+     * Descarga notas desde Firestore y las sincroniza localmente
+     * Implementa resolución de conflictos con "última escritura gana"
+     */
+    suspend fun downloadNotesFromFirestore(userId: String) {
+        if (!networkUtils.isConnected.value) {
+            Log.d(TAG, "downloadNotesFromFirestore: Sin conexión, cancelando descarga")
+            return
+        }
+
+        try {
+            Log.d(TAG, "downloadNotesFromFirestore: Descargando notas para usuario $userId")
+
+            val querySnapshot = firestore.collection(NOTES_COLLECTION)
+                .whereEqualTo("userId", userId)
+                .get()
+                .await()
+
+            Log.d(TAG, "downloadNotesFromFirestore: Encontradas ${querySnapshot.size()} notas en Firestore")
+
+            for (document in querySnapshot.documents) {
+                try {
+                    val data = document.data ?: continue
+                    
+                    val firestoreNote = Note(
+                        id = data["id"] as String,
+                        userId = data["userId"] as String,
+                        title = data["title"] as String,
+                        content = data["content"] as String,
+                        createdAt = (data["createdAt"] as Number).toLong(),
+                        updatedAt = (data["updatedAt"] as Number).toLong(),
+                        isSynced = true // Las notas de Firestore están sincronizadas
+                    )
+
+                    // Verificar si existe localmente
+                    val localNote = noteDao.getNoteById(firestoreNote.id)
+
+                    if (localNote == null) {
+                        // Nota nueva, insertar directamente
+                        noteDao.insertNote(firestoreNote)
+                        Log.d(TAG, "downloadNotesFromFirestore: Nueva nota ${firestoreNote.id} insertada")
+                    } else {
+                        // Conflicto: aplicar "última escritura gana"
+                        if (firestoreNote.updatedAt > localNote.updatedAt) {
+                            noteDao.updateNote(firestoreNote)
+                            Log.d(TAG, "downloadNotesFromFirestore: Nota ${firestoreNote.id} actualizada (Firestore más reciente)")
+                        } else if (localNote.updatedAt > firestoreNote.updatedAt && !localNote.isSynced) {
+                            // La versión local es más reciente y no está sincronizada
+                            // Subir la versión local a Firestore
+                            val noteMap = mapOf(
+                                "id" to localNote.id,
+                                "userId" to localNote.userId,
+                                "title" to localNote.title,
+                                "content" to localNote.content,
+                                "createdAt" to localNote.createdAt,
+                                "updatedAt" to localNote.updatedAt,
+                                "isSynced" to true
+                            )
+
+                            firestore.collection(NOTES_COLLECTION)
+                                .document(localNote.id)
+                                .set(noteMap)
+                                .await()
+
+                            noteDao.updateSyncStatus(localNote.id, true)
+                            Log.d(TAG, "downloadNotesFromFirestore: Nota ${localNote.id} local más reciente, subida a Firestore")
+                        }
+                        // Si las versiones son iguales o la local está sincronizada, no hacer nada
+                    }
+
+                } catch (e: Exception) {
+                    Log.e(TAG, "downloadNotesFromFirestore: Error procesando nota ${document.id}", e)
+                }
+            }
+
+            Log.d(TAG, "downloadNotesFromFirestore: Descarga completada")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "downloadNotesFromFirestore: Error general en descarga", e)
+        }
+    }
+
+    /**
+     * Realiza sincronización completa: sube notas pendientes y descarga cambios remotos
+     */
+    suspend fun performFullSync(userId: String) {
+        Log.d(TAG, "performFullSync: Iniciando sincronización completa para usuario $userId")
+        
+        // Primero subir cambios locales
+        syncUnsyncedNotes()
+        
+        // Luego descargar cambios remotos
+        downloadNotesFromFirestore(userId)
+        
+        Log.d(TAG, "performFullSync: Sincronización completa finalizada")
+    }
+
+    /**
+     * Obtiene el estado de conectividad
+     */
+    fun isConnected(): Boolean = networkUtils.isConnected.value
+
+    /**
+     * Limpia recursos de red
+     */
+    fun cleanup() {
+        networkUtils.cleanup()
+    }
 }

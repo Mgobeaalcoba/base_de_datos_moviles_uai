@@ -26,4 +26,14 @@ interface NoteDao {
 
     @Query("DELETE FROM notes WHERE userId = :userId")
     suspend fun deleteNotesByUser(userId: String)
+
+    // Queries específicas para sincronización
+    @Query("SELECT * FROM notes WHERE isSynced = 0 ORDER BY updatedAt DESC")
+    suspend fun getUnsyncedNotes(): List<Note>
+
+    @Query("SELECT * FROM notes WHERE userId = :userId AND isSynced = 0 ORDER BY updatedAt DESC")
+    suspend fun getUnsyncedNotesByUser(userId: String): List<Note>
+
+    @Query("UPDATE notes SET isSynced = :isSynced WHERE id = :noteId")
+    suspend fun updateSyncStatus(noteId: String, isSynced: Boolean)
 }

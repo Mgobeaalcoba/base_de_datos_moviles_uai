@@ -61,6 +61,8 @@ class NoteViewModel(private val repository: NoteRepository) : ViewModel() {
     fun selectUser(user: User) {
         _selectedUser.value = user
         loadNotesForUser(user.id)
+        // Realizar sincronización completa al seleccionar usuario
+        performFullSync(user.id)
     }
 
     private fun loadNotesForUser(userId: String) {
@@ -200,5 +202,53 @@ class NoteViewModel(private val repository: NoteRepository) : ViewModel() {
 
     fun clearError() {
         _errorMessage.value = null
+    }
+
+    // ==================== FUNCIONES DE SINCRONIZACIÓN ====================
+
+    /**
+     * Realiza sincronización completa para el usuario seleccionado
+     */
+    private fun performFullSync(userId: String) {
+        viewModelScope.launch {
+            try {
+                Log.d("NoteViewModel", "performFullSync: Iniciando sincronización para usuario $userId")
+                repository.performFullSync(userId)
+                Log.d("NoteViewModel", "performFullSync: Sincronización completada")
+            } catch (e: Exception) {
+                Log.e("NoteViewModel", "performFullSync: Error en sincronización", e)
+                // No mostrar error al usuario para no interrumpir la experiencia
+            }
+        }
+    }
+
+    /**
+     * Sincroniza manualmente las notas pendientes
+     */
+    fun syncPendingNotes() {
+        viewModelScope.launch {
+            try {
+                _isLoading.value = true
+                repository.syncUnsyncedNotes()
+                _errorMessage.value = null
+            } catch (e: Exception) {
+                _errorMessage.value = "Error sincronizando notas: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Obtiene el estado de conectividad
+     */
+    fun isConnected(): Boolean = repository.isConnected()
+
+    /**
+     * Limpia recursos cuando el ViewModel se destruye
+     */
+    override fun onCleared() {
+        super.onCleared()
+        repository.cleanup()
     }
 }

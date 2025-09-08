@@ -18,8 +18,8 @@ import com.apptrack.solutions.model.NoteTag
         Attachment::class,
         NoteTag::class
     ],
-    version = 1,
-    exportSchema = false
+    version = 2,
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao

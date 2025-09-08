@@ -11,5 +11,6 @@ data class Note(
     val title: String,
     val content: String,
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val isSynced: Boolean = false // Indica si la nota se ha sincronizado con Firestore
 )

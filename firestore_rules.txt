@@ -1,0 +1,45 @@
+// Reglas de seguridad para Firestore
+// Copia este contenido y pégalo en Firebase Console > Firestore Database > Reglas
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Reglas para la colección de usuarios
+    match /users/{userId} {
+      // Solo el usuario autenticado puede leer/escribir sus propios datos
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Reglas para la colección de notas
+    match /notes/{noteId} {
+      // Solo el usuario autenticado puede leer/escribir notas donde userId coincide con su UID
+      allow read, write: if request.auth != null &&
+        (resource == null || resource.data.userId == request.auth.uid);
+    }
+
+    // Reglas para la colección de etiquetas
+    match /tags/{tagId} {
+      // Cualquier usuario autenticado puede crear y leer etiquetas
+      // (puedes hacerlo más restrictivo si quieres etiquetas por usuario)
+      allow read, write: if request.auth != null;
+    }
+
+    // Reglas para la colección de relaciones nota-etiqueta
+    match /note_tags/{noteTagId} {
+      // Solo usuarios autenticados pueden crear/leer estas relaciones
+      allow read, write: if request.auth != null;
+    }
+
+    // Reglas para la colección de adjuntos
+    match /attachments/{attachmentId} {
+      // Solo usuarios autenticados pueden crear/leer adjuntos
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+
+// INSTRUCCIONES:
+// 1. Ve a Firebase Console > Tu proyecto > Firestore Database
+// 2. Haz clic en la pestaña "Reglas"
+// 3. Reemplaza el contenido actual con estas reglas
+// 4. Haz clic en "Publicar"

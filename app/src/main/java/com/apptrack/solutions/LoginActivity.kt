@@ -21,6 +21,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
 import kotlinx.coroutines.launch
 import com.apptrack.solutions.ui.theme.AppTrackSolutionsGobeaTheme
+import android.util.Log
 
 class LoginActivity : ComponentActivity() {
     private lateinit var googleSignInClient: GoogleSignInClient
@@ -104,8 +105,14 @@ class LoginActivity : ComponentActivity() {
     }
 
     private fun saveUserAndNavigate(firebaseUser: com.google.firebase.auth.FirebaseUser) {
+        Log.d("LoginActivity", "saveUserAndNavigate: Iniciando proceso de guardado para usuario: ${firebaseUser.uid}")
+        Log.d("LoginActivity", "saveUserAndNavigate: Nombre: ${firebaseUser.displayName}")
+        Log.d("LoginActivity", "saveUserAndNavigate: Email: ${firebaseUser.email}")
+
         lifecycleScope.launch {
             try {
+                Log.d("LoginActivity", "saveUserAndNavigate: Creando instancia de Room DB")
+
                 // Instanciar Room DB y repositorio
                 val db = Room.databaseBuilder(
                     applicationContext,
@@ -113,6 +120,7 @@ class LoginActivity : ComponentActivity() {
                     "notes-db"
                 ).fallbackToDestructiveMigration().build()
 
+                Log.d("LoginActivity", "saveUserAndNavigate: Creando repositorio")
                 val repository = com.apptrack.solutions.data.NoteRepository(
                     db.noteDao(),
                     db.userDao(),
@@ -121,6 +129,7 @@ class LoginActivity : ComponentActivity() {
                     db.noteTagDao()
                 )
 
+                Log.d("LoginActivity", "saveUserAndNavigate: Creando objeto User")
                 // Crear objeto User
                 val user = com.apptrack.solutions.model.User(
                     id = firebaseUser.uid,
@@ -128,13 +137,18 @@ class LoginActivity : ComponentActivity() {
                     email = firebaseUser.email ?: ""
                 )
 
-                // Insertar usuario en Room
+                Log.d("LoginActivity", "saveUserAndNavigate: Insertando usuario en repositorio (Room + Firestore)")
+                // Insertar usuario en Room y Firestore
                 repository.insertUser(user)
+
+                Log.d("LoginActivity", "saveUserAndNavigate: Usuario guardado exitosamente. Navegando a MainActivity")
 
                 // Navegar a MainActivity tras sincronización
                 startActivity(Intent(this@LoginActivity, MainActivity::class.java))
                 finish()
+
             } catch (e: Exception) {
+                Log.e("LoginActivity", "saveUserAndNavigate: Error guardando usuario", e)
                 errorMessage = "Error guardando usuario: ${e.message}"
                 isLoading = false
             }

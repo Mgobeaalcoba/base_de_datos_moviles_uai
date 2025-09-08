@@ -1,60 +1,69 @@
 package com.apptrack.solutions.data
 
-import android.util.Log
+import kotlinx.coroutines.flow.Flow
 import com.apptrack.solutions.model.Note
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.tasks.await
+import com.apptrack.solutions.model.Tag
+import com.apptrack.solutions.model.User
+import com.apptrack.solutions.model.Attachment
+import com.apptrack.solutions.model.NoteTag
 
 class NoteRepository(
     private val noteDao: NoteDao,
-    private val db: FirebaseFirestore = FirebaseFirestore.getInstance(),
-    private val auth: FirebaseAuth = FirebaseAuth.getInstance()
+    private val userDao: UserDao,
+    private val tagDao: TagDao,
+    private val attachmentDao: AttachmentDao,
+    private val noteTagDao: NoteTagDao
 ) {
-    private val userId: String? get() = auth.currentUser?.uid
+    // User operations
+    suspend fun insertUser(user: User) = userDao.insertUser(user)
 
-    suspend fun getLocalNotes(): List<Note> = noteDao.getAllNotes()
+    fun getAllUsers(): Flow<List<User>> = userDao.getAllUsers()
 
-    suspend fun insertNote(note: Note) {
-        noteDao.insertNote(note)
-        syncNoteToCloud(note)
-    }
+    suspend fun getUserById(userId: String): User? = userDao.getUserById(userId)
 
-    suspend fun updateNote(note: Note) {
-        noteDao.updateNote(note)
-        syncNoteToCloud(note)
-    }
+    // Note operations
+    suspend fun insertNote(note: Note) = noteDao.insertNote(note)
 
-    suspend fun deleteNote(note: Note) {
-        noteDao.deleteNote(note)
-        deleteNoteFromCloud(note)
-    }
+    suspend fun updateNote(note: Note) = noteDao.updateNote(note)
 
-    suspend fun syncNoteToCloud(note: Note) {
-        userId?.let { uid ->
-            Log.d("FirestoreSync", "Sincronizando nota para UID: $uid, noteId: ${note.id}")
-            db.collection("notes").document(uid)
-                .collection("user_notes").document(note.id)
-                .set(note)
-                .await()
-        } ?: Log.e("FirestoreSync", "userId es null, no se puede sincronizar")
-    }
+    suspend fun deleteNote(note: Note) = noteDao.deleteNote(note)
 
-    suspend fun deleteNoteFromCloud(note: Note) {
-        userId?.let { uid ->
-            db.collection("notes").document(uid)
-                .collection("user_notes").document(note.id)
-                .delete()
-                .await()
-        }
-    }
+    fun getAllNotes(): Flow<List<Note>> = noteDao.getAllNotes()
 
-    suspend fun fetchNotesFromCloud(): List<Note> {
-        userId?.let { uid ->
-            val snapshot = db.collection("notes").document(uid)
-                .collection("user_notes").get().await()
-            return snapshot.documents.mapNotNull { it.toObject(Note::class.java) }
-        }
-        return emptyList()
-    }
+    fun getNotesByUser(userId: String): Flow<List<Note>> = noteDao.getNotesByUser(userId)
+
+    suspend fun getNoteById(noteId: String): Note? = noteDao.getNoteById(noteId)
+
+    // Tag operations
+    suspend fun insertTag(tag: Tag) = tagDao.insertTag(tag)
+
+    suspend fun updateTag(tag: Tag) = tagDao.updateTag(tag)
+
+    suspend fun deleteTag(tag: Tag) = tagDao.deleteTag(tag)
+
+    fun getAllTags(): Flow<List<Tag>> = tagDao.getAllTags()
+
+    suspend fun getTagById(tagId: String): Tag? = tagDao.getTagById(tagId)
+
+    fun getTagsForNote(noteId: String): Flow<List<Tag>> = tagDao.getTagsForNote(noteId)
+
+    // NoteTag operations
+    suspend fun insertNoteTag(noteTag: NoteTag) = noteTagDao.insertNoteTag(noteTag)
+
+    suspend fun deleteNoteTag(noteTag: NoteTag) = noteTagDao.deleteNoteTag(noteTag)
+
+    suspend fun deleteNoteTagsByNote(noteId: String) = noteTagDao.deleteNoteTagsByNote(noteId)
+
+    suspend fun deleteNoteTagsByTag(tagId: String) = noteTagDao.deleteNoteTagsByTag(tagId)
+
+    // Attachment operations
+    suspend fun insertAttachment(attachment: Attachment) = attachmentDao.insertAttachment(attachment)
+
+    suspend fun updateAttachment(attachment: Attachment) = attachmentDao.updateAttachment(attachment)
+
+    suspend fun deleteAttachment(attachment: Attachment) = attachmentDao.deleteAttachment(attachment)
+
+    fun getAttachmentsForNote(noteId: String): Flow<List<Attachment>> = attachmentDao.getAttachmentsForNote(noteId)
+
+    suspend fun getAttachmentById(attachmentId: String): Attachment? = attachmentDao.getAttachmentById(attachmentId)
 }

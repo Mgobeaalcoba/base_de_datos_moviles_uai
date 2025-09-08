@@ -2,13 +2,14 @@ package com.apptrack.solutions.model
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import java.util.*
 
 @Entity(tableName = "notes")
 data class Note(
-    @PrimaryKey val id: String,
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val userId: String,
     val title: String,
     val content: String,
-    val timestamp: Long,
-    val isSynced: Boolean = false
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
 )
-

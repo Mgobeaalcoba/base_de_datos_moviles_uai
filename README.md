@@ -1,4 +1,4 @@
-# AppTrack Solutions - MVP de Notas con Sincronización Bidireccional
+# AppTrack Solutions - README.md
 
 **Autor:** Gobea Alcoba, Mariano Daniel  
 **Proyecto:** TP NRO 02 - Bases de Datos Móviles  
